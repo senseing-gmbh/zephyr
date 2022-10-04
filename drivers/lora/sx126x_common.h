@@ -24,7 +24,7 @@
 #define SX126X_DEVICE_ID SX1262
 #elif DT_HAS_COMPAT_STATUS_OKAY(st_stm32wl_subghz_radio)
 #define DT_DRV_COMPAT st_stm32wl_subghz_radio
-#define SX126X_DEVICE_ID SX1262
+#define SX126X_DEVICE_ID SX1261
 #else
 #error No SX126x instance in device tree.
 #endif

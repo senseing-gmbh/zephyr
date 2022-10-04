@@ -18,6 +18,8 @@
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
 #include <zephyr/init.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/device_runtime.h>
 #include <soc.h>
 #include <stm32_ll_adc.h>
 #if defined(CONFIG_SOC_SERIES_STM32U5X)
@@ -941,6 +943,7 @@ static void adc_stm32_isr(const struct device *dev)
 	}
 
 	LOG_DBG("%s ISR triggered.", dev->name);
+	pm_device_runtime_put_async(dev);
 }
 
 static void adc_context_on_complete(struct adc_context *ctx, int status)
@@ -958,6 +961,11 @@ static int adc_stm32_read(const struct device *dev,
 {
 	struct adc_stm32_data *data = dev->data;
 	int error;
+
+	error = pm_device_runtime_get(dev);
+	if (error < 0) {
+		return error;
+	}
 
 	adc_context_lock(&data->ctx, false, NULL);
 	error = start_read(dev, sequence);
@@ -1102,6 +1110,7 @@ static int adc_stm32_channel_setup(const struct device *dev,
 
 static int adc_stm32_init(const struct device *dev)
 {
+	LOG_INF("adc_stm32_init called");
 	struct adc_stm32_data *data = dev->data;
 	const struct adc_stm32_cfg *config = dev->config;
 	const struct device *const clk = DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE);
@@ -1306,10 +1315,69 @@ static int adc_stm32_init(const struct device *dev)
 		);
 	}
 #endif
+
+	/* enable device runtime power management */
+    err = pm_device_runtime_enable(dev);
+	if ((err < 0) && (err != -ENOSYS)) {
+		return err;
+	}
+
 	adc_context_unlock_unconditionally(&data->ctx);
 
 	return 0;
 }
+
+#ifdef CONFIG_PM_DEVICE
+static int adc_stm32_pm_action(const struct device *dev,
+			      enum pm_device_action action)
+{
+	int ret = 0;
+
+	const struct adc_stm32_cfg *config = dev->config;
+	ADC_TypeDef *adc = (ADC_TypeDef *)config->base;
+
+	switch (action) {
+	case PM_DEVICE_ACTION_RESUME:
+		LOG_DBG("Reenabling ADC");
+#if defined(STM32F3X_ADC_V1_1) || \
+	defined(CONFIG_SOC_SERIES_STM32L4X) || \
+	defined(CONFIG_SOC_SERIES_STM32L5X) || \
+	defined(CONFIG_SOC_SERIES_STM32WBX) || \
+	defined(CONFIG_SOC_SERIES_STM32G0X) || \
+	defined(CONFIG_SOC_SERIES_STM32G4X) || \
+	defined(CONFIG_SOC_SERIES_STM32H7X) || \
+	defined(CONFIG_SOC_SERIES_STM32U5X) || \
+	defined(CONFIG_SOC_SERIES_STM32WLX)
+		LL_ADC_EnableInternalRegulator(adc);
+		k_busy_wait(LL_ADC_DELAY_INTERNAL_REGUL_STAB_US);
+#endif
+		adc_stm32_enable(adc);
+		break;
+
+	case PM_DEVICE_ACTION_SUSPEND:
+		LOG_DBG("Suspending ADC");
+		k_msleep(1);
+		adc_stm32_disable(adc);
+#if defined(STM32F3X_ADC_V1_1) || \
+	defined(CONFIG_SOC_SERIES_STM32L4X) || \
+	defined(CONFIG_SOC_SERIES_STM32L5X) || \
+	defined(CONFIG_SOC_SERIES_STM32WBX) || \
+	defined(CONFIG_SOC_SERIES_STM32G0X) || \
+	defined(CONFIG_SOC_SERIES_STM32G4X) || \
+	defined(CONFIG_SOC_SERIES_STM32H7X) || \
+	defined(CONFIG_SOC_SERIES_STM32U5X) || \
+	defined(CONFIG_SOC_SERIES_STM32WLX)
+		LL_ADC_DisableInternalRegulator(adc);
+#endif
+		break;
+
+	default:
+		ret = -ENOTSUP;
+	}
+
+	return ret;
+}
+#endif /* CONFIG_PM_DEVICE */
 
 static const struct adc_driver_api api_stm32_driver_api = {
 	.channel_setup = adc_stm32_channel_setup,
@@ -1405,8 +1473,9 @@ static struct adc_stm32_data adc_stm32_data_##index = {			\
 	ADC_CONTEXT_INIT_SYNC(adc_stm32_data_##index, ctx),		\
 };									\
 									\
+PM_DEVICE_DT_INST_DEFINE(index, adc_stm32_pm_action);			\
 DEVICE_DT_INST_DEFINE(index,						\
-		    &adc_stm32_init, NULL,				\
+		    &adc_stm32_init, PM_DEVICE_DT_INST_GET(index),	\
 		    &adc_stm32_data_##index, &adc_stm32_cfg_##index,	\
 		    POST_KERNEL, CONFIG_ADC_INIT_PRIORITY,		\
 		    &api_stm32_driver_api);

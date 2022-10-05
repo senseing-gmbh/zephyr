@@ -1238,7 +1238,6 @@ static int adc_stm32_set_clock(const struct device *dev)
 
 static int adc_stm32_init(const struct device *dev)
 {
-	LOG_INF("adc_stm32_init called");
 	struct adc_stm32_data *data = dev->data;
 	const struct adc_stm32_cfg *config = dev->config;
 	const struct device *const clk = DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE);
@@ -1362,7 +1361,7 @@ static int adc_stm32_init(const struct device *dev)
 #endif
 
 	/* enable device runtime power management */
-    err = pm_device_runtime_enable(dev);
+	err = pm_device_runtime_enable(dev);
 	if ((err < 0) && (err != -ENOSYS)) {
 		return err;
 	}
@@ -1383,20 +1382,24 @@ static int adc_stm32_pm_action(const struct device *dev,
 
 	switch (action) {
 	case PM_DEVICE_ACTION_RESUME:
+#if defined(CONFIG_SOC_SERIES_STM32WBX) || \
+	defined(CONFIG_SOC_SERIES_STM32WLX)
+		LOG_DBG("Reinitalizing ADC");
+		adc_stm32_init(dev);
+#else
 		LOG_DBG("Reenabling ADC");
 #if defined(STM32F3X_ADC_V1_1) || \
-	defined(CONFIG_SOC_SERIES_STM32L4X) || \
-	defined(CONFIG_SOC_SERIES_STM32L5X) || \
-	defined(CONFIG_SOC_SERIES_STM32WBX) || \
-	defined(CONFIG_SOC_SERIES_STM32G0X) || \
-	defined(CONFIG_SOC_SERIES_STM32G4X) || \
-	defined(CONFIG_SOC_SERIES_STM32H7X) || \
-	defined(CONFIG_SOC_SERIES_STM32U5X) || \
-	defined(CONFIG_SOC_SERIES_STM32WLX)
+    defined(CONFIG_SOC_SERIES_STM32L4X) || \
+    defined(CONFIG_SOC_SERIES_STM32L5X) || \
+    defined(CONFIG_SOC_SERIES_STM32G0X) || \
+    defined(CONFIG_SOC_SERIES_STM32G4X) || \
+    defined(CONFIG_SOC_SERIES_STM32H7X) || \
+    defined(CONFIG_SOC_SERIES_STM32U5X)
 		LL_ADC_EnableInternalRegulator(adc);
 		k_busy_wait(LL_ADC_DELAY_INTERNAL_REGUL_STAB_US);
 #endif
 		adc_stm32_enable(adc);
+#endif
 		break;
 
 	case PM_DEVICE_ACTION_SUSPEND:
@@ -1404,14 +1407,14 @@ static int adc_stm32_pm_action(const struct device *dev,
 		k_msleep(1);
 		adc_stm32_disable(adc);
 #if defined(STM32F3X_ADC_V1_1) || \
-	defined(CONFIG_SOC_SERIES_STM32L4X) || \
-	defined(CONFIG_SOC_SERIES_STM32L5X) || \
-	defined(CONFIG_SOC_SERIES_STM32WBX) || \
-	defined(CONFIG_SOC_SERIES_STM32G0X) || \
-	defined(CONFIG_SOC_SERIES_STM32G4X) || \
-	defined(CONFIG_SOC_SERIES_STM32H7X) || \
-	defined(CONFIG_SOC_SERIES_STM32U5X) || \
-	defined(CONFIG_SOC_SERIES_STM32WLX)
+    defined(CONFIG_SOC_SERIES_STM32L4X) || \
+    defined(CONFIG_SOC_SERIES_STM32L5X) || \
+    defined(CONFIG_SOC_SERIES_STM32WBX) || \
+    defined(CONFIG_SOC_SERIES_STM32G0X) || \
+    defined(CONFIG_SOC_SERIES_STM32G4X) || \
+    defined(CONFIG_SOC_SERIES_STM32H7X) || \
+    defined(CONFIG_SOC_SERIES_STM32U5X) || \
+    defined(CONFIG_SOC_SERIES_STM32WLX)
 		LL_ADC_DisableInternalRegulator(adc);
 #endif
 		break;

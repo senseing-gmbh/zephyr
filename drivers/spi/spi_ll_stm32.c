@@ -509,11 +509,6 @@ static int spi_stm32_configure(const struct device *dev,
 	uint32_t clock;
 	int br;
 
-	if (spi_context_configured(&data->ctx, config)) {
-		/* Nothing to do */
-		return 0;
-	}
-
 	if ((SPI_WORD_SIZE_GET(config->operation) != 8)
 	    && (SPI_WORD_SIZE_GET(config->operation) != 16)) {
 		return -ENOTSUP;

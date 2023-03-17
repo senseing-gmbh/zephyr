@@ -1361,9 +1361,13 @@ static int adc_stm32_init(const struct device *dev)
 #endif
 
 	/* enable device runtime power management */
-	err = pm_device_runtime_enable(dev);
-	if ((err < 0) && (err != -ENOSYS)) {
-		return err;
+	static bool pm_enabled = false;
+	if (!pm_enabled) {
+		err = pm_device_runtime_enable(dev);
+		if ((err < 0) && (err != -ENOSYS)) {
+			return err;
+		}
+		pm_enabled = true;
 	}
 
 	adc_context_unlock_unconditionally(&data->ctx);

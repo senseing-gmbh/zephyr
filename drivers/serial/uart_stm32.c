@@ -1758,7 +1758,7 @@ static void uart_stm32_suspend_setup(const struct device *dev)
 	LL_USART_ClearFlag_ORE(config->usart);
 }
 
-static int uart_stm32_pm_action(const struct device *dev,
+int uart_stm32_pm_action(const struct device *dev,
 			       enum pm_device_action action)
 {
 	const struct uart_stm32_config *config = dev->config;

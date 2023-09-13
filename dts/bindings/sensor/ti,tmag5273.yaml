@@ -178,3 +178,25 @@ properties:
     description: |
       Ignore detected diagnostic fail.
       According to the manual, this should be done if VCC < 2.3V.
+
+  i2c-startup-address:
+    type: int
+    description: |
+      Startup address of the sensor.
+
+      This is only interesting if i2c-update is used.
+      Specifies the hardware assigned address of the sensor (see datasheet for your version),
+      which is used to communicate the final I2C-address.
+
+  t-start-power-up:
+    type: int
+    default: 270
+    description: |
+      Duration required to power up the sensor
+
+      This provides the duration, in microseconds, before the first transaction
+      with the device is performed after setting the VCC pin to high.
+
+      If not provided uses value from the datasheet.
+
+      Ignored if supply-gpios is not given.

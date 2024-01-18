@@ -1,0 +1,182 @@
+# Copyright (c) 2023, deveritec GmbH
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Texas Instruments TMAG5273 Low-Power Linear 3D Hall-Effect Sensor with an I2C interface.
+  See the specification for the default I2C address.
+  The specification of the sensor can be found at:
+    https://www.ti.com/lit/ds/symlink/tmag5273.pdf
+  The <zephyr/dt-bindings/sensor/tmag5273.h> file should be included in the
+  DeviceTree and it provides macros that can be used for configuration.
+
+compatible: "ti,tmag5273"
+
+include: [sensor-device.yaml, i2c-device.yaml]
+
+properties:
+  operation-mode:
+    type: int
+    default: 0
+    enum:
+      - 0
+      - 1
+    description: |
+      Sensor mode used if set to "active".
+      Defaults to continuous sampling.
+
+        0 # continuous
+        1 # standby
+
+  axis:
+    type: int
+    default: 0x7
+    enum:
+      - 0x0
+      - 0x1
+      - 0x2
+      - 0x4
+      - 0x8
+      - 0x3
+      - 0x5
+      - 0x6
+      - 0x7
+      - 0x8
+    description: |
+      Inputs of the sensor represented as flags.
+
+      Can be "or"-ed to allow for more than one input.
+      Defaults to measurement on all axis.
+
+      0   # none
+      0x1 # x-axis
+      0x2 # y-axis
+      0x4 # z-axis
+
+  temperature:
+    type: boolean
+    description: |
+      Select for temperature measurement.
+
+  range:
+    type: int
+    default: 1
+    enum:
+      - 0
+      - 1
+      - 2
+    description: |
+      XYZ-measurement range for magnetic-field value.
+      Defaults to +/-80mT.
+
+        0 # +/-40mT (TMAG5273A1) or +/-133mT (TMAG5273A2)
+        1 # +/-80mT (TMAG5273A1) or +/-266mT (TMAG5273A2)
+        2 # @runtime (initial value is: "high")
+
+  int-gpios:
+    type: phandle-array
+    description: |
+      The INT signal connection.
+
+      The signal is active-low as produced by the sensor.
+      Either used for interrupt signaling, or triggering a conversion.
+
+  temperature-coefficient:
+    type: int
+    default: 0
+    enum:
+      - 0
+      - 1
+      - 2
+    description: |
+      Selects the magnet temperature coefficient.
+      Defaults to none.
+
+        0 # none
+        1 # 0.12%/ deg C (NdBFe)
+        2 # 0.2%/deg C (Ceramic)
+
+      Ignored if temperature is not measured.
+
+  trigger-conversion-via-int:
+    type: boolean
+    description: |
+      Selects initiation of a single conversion based on a trigger via
+      the INT-pin if enabled, and via I2C-command if disabled.
+
+      Used in "standby"-, "wakeup-and-sleep"- and "sleep"-mode.
+      Using I2C-conversion trigger may result in (handled) I2C-errors.
+
+  angle-magnitude-axis:
+    type: int
+    default: 0
+    enum:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+    description: |
+      Enables angle calculation, magnetic gain, and offset corrections
+      between two selected magnetic channels.
+      Defaults to no additional calculations.
+
+      0 # deactivated
+      1 # x/y
+      2 # y/z
+      3 # x/z
+      4 # @runtime (initial value is: "deactivated")
+
+  ch-mag-gain-correction:
+    type: int
+    default: 0
+    enum:
+      - 0
+      - 1
+    description: |
+      Channel for the magnitude gain correction.
+      Defaults to 1st channel.
+
+        0 # 1st channel
+        1 # 2nd channel
+
+      Only active if angle-magnitude-calculation is active.
+
+  average-mode:
+    type: int
+    default: 1
+    enum:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+    description: |
+      Enables additional sampling of the sensor data to reduce the noise effect
+      (or to increase resolution).
+
+      Note that averaging will influence the output data rate.
+      Defaults to 2x averaging.
+
+        0 # no averaging - 10.0-kSPS (3-axes) or 20-kSPS (1 axis)
+        1 # 2x           - 5.7-kSPS (3-axes) or 13.3-kSPS (1 axis)
+        2 # 4x           - 3.1-kSPS (3-axes) or 8.0-kSPS (1 axis)
+        3 # 8x           - 1.6-kSPS (3-axes) or 4.4-kSPS (1 axis)
+        4 # 16x          - 0.8-kSPS (3-axes) or 2.4-kSPS (1 axis)
+        5 # 32x          - 0.4-kSPS (3-axes) or 1.2-kSPS (1 axis)
+
+  crc-enabled:
+    type: boolean
+    description: |
+      Activate I2C CRC byte to be sent.
+
+  low-noise:
+    type: boolean
+    description: |
+      Select low-noise mode when enabled, and low-power mode when disabled.
+
+  ignore-diag-fail:
+    type: boolean
+    description: |
+      Ignore detected diagnostic fail.
+      According to the manual, this should be done if VCC < 2.3V.

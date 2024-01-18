@@ -228,6 +228,42 @@ static int set_setting(const char *name, size_t len_rd, settings_read_cb read_cb
 	return -ENOENT;
 }
 
+static int commit_ble_addr_ipm(void)
+{
+	bt_addr_t *uid_addr=&bt_dev.id_addr[0].a;
+	struct aci_set_ble_addr {
+		uint8_t config_offset;
+		uint8_t length;
+		uint8_t value[6];
+	} __packed;
+	struct aci_set_ble_addr *param;
+	struct net_buf *buf, *rsp;
+	int err;
+
+	buf = bt_hci_cmd_create(BT_OP(BT_OGF_VS, 0xFC0C), sizeof(*param));
+
+	if (!buf) {
+		return -ENOBUFS;
+	}
+
+	param = net_buf_add(buf, sizeof(*param));
+	param->config_offset = 0;//HCI_CONFIG_DATA_PUBADDR_OFFSET;
+	param->length = 6;
+	param->value[0] = uid_addr->val[0];
+	param->value[1] = uid_addr->val[1];
+	param->value[2] = uid_addr->val[2];
+	param->value[3] = uid_addr->val[3];
+	param->value[4] = uid_addr->val[4];
+	param->value[5] = uid_addr->val[5];
+
+	err = bt_hci_cmd_send_sync(BT_OP(BT_OGF_VS, 0xFC0C), buf, &rsp);
+	if (err) {
+		return err;
+	}
+	net_buf_unref(rsp);
+	return 0;
+}
+
 static int commit_settings(void)
 {
 	int err;
@@ -264,6 +300,8 @@ static int commit_settings(void)
 			return err;
 		}
 	}
+
+	commit_ble_addr_ipm();
 
 	if (!atomic_test_bit(bt_dev.flags, BT_DEV_READY)) {
 		bt_finalize_init();

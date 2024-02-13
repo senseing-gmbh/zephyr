@@ -21,6 +21,9 @@
 #include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/dma/dma_stm32.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/pm/policy.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/device_runtime.h>
 
 #if DT_INST_NODE_HAS_PROP(0, spi_bus_width) && \
 	DT_INST_PROP(0, spi_bus_width) == 4
@@ -219,12 +222,18 @@ static int qspi_read_access(const struct device *dev, QSPI_CommandTypeDef *cmd,
 	const struct flash_stm32_qspi_config *dev_cfg = dev->config;
 	struct flash_stm32_qspi_data *dev_data = dev->data;
 	HAL_StatusTypeDef hal_ret;
+	int ret;
 
 	ARG_UNUSED(dev_cfg);
 
 	cmd->NbData = size;
 
 	dev_data->cmd_status = 0;
+
+	ret = pm_device_runtime_get(dev);
+	if (ret < 0) {
+		return ret;
+	}
 
 	hal_ret = HAL_QSPI_Command_IT(&dev_data->hqspi, cmd);
 	if (hal_ret != HAL_OK) {
@@ -241,6 +250,8 @@ static int qspi_read_access(const struct device *dev, QSPI_CommandTypeDef *cmd,
 		LOG_ERR("%d: Failed to read data", hal_ret);
 		return -EIO;
 	}
+
+	pm_device_runtime_put_async(dev);
 
 	k_sem_take(&dev_data->sync, K_FOREVER);
 
@@ -310,6 +321,11 @@ static int qspi_read_jedec_id(const struct device *dev, uint8_t *id)
 
 	HAL_StatusTypeDef hal_ret;
 
+	ret = pm_device_runtime_get(dev);
+	if (ret < 0) {
+		return ret;
+	}
+
 	hal_ret = HAL_QSPI_Command_IT(&dev_data->hqspi, &cmd);
 
 	if (hal_ret != HAL_OK) {
@@ -322,6 +338,8 @@ static int qspi_read_jedec_id(const struct device *dev, uint8_t *id)
 		LOG_ERR("%d: Failed to read data", hal_ret);
 		return -EIO;
 	}
+
+ 	pm_device_runtime_put_async(dev);
 
 	dev_data->cmd_status = 0;
 	id = &data[0];
@@ -457,6 +475,11 @@ static int flash_stm32_qspi_write(const struct device *dev, off_t addr,
 
 	qspi_lock_thread(dev);
 
+	ret = pm_device_runtime_get(dev);
+	if (ret < 0) {
+		return ret;
+	}
+
 	while (size > 0) {
 		size_t to_write = size;
 
@@ -492,6 +515,8 @@ static int flash_stm32_qspi_write(const struct device *dev, off_t addr,
 			break;
 		}
 	}
+
+	pm_device_runtime_put_async(dev);
 
 	qspi_unlock_thread(dev);
 
@@ -529,6 +554,11 @@ static int flash_stm32_qspi_erase(const struct device *dev, off_t addr,
 
 	qspi_set_address_size(dev, &cmd_erase);
 	qspi_lock_thread(dev);
+
+	ret = pm_device_runtime_get(dev);
+	if (ret < 0) {
+		return ret;
+	}
 
 	while ((size > 0) && (ret == 0)) {
 		cmd_erase.Address = addr;
@@ -571,6 +601,8 @@ static int flash_stm32_qspi_erase(const struct device *dev, off_t addr,
 		}
 		qspi_wait_until_ready(dev);
 	}
+
+ 	pm_device_runtime_put_async(dev);
 
 	qspi_unlock_thread(dev);
 
@@ -1337,8 +1369,64 @@ static int flash_stm32_qspi_init(const struct device *dev)
 	}
 #endif /* CONFIG_FLASH_PAGE_LAYOUT */
 
+	pm_device_runtime_enable(dev);
+
 	return 0;
 }
+
+#if defined(CONFIG_PM_DEVICE)
+static int flash_stm32_qspi_pm_action(const struct device *dev,
+			       enum pm_device_action action)
+{
+	const struct flash_stm32_qspi_config *dev_cfg = dev->config;
+	int err;
+
+	LOG_DBG("action=%d", action);
+	switch (action) {
+	case PM_DEVICE_ACTION_RESUME:
+		/* Set pins to active state */
+		err = pinctrl_apply_state(dev_cfg->pcfg, PINCTRL_STATE_DEFAULT);
+		if (err < 0) {
+			return err;
+		}
+
+		/* enable clock */
+		if (clock_control_on(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE),
+							 (clock_control_subsys_t) &dev_cfg->pclken) != 0) {
+			LOG_DBG("Could not enable QSPI clock");
+			return -EIO;
+		}
+		break;
+
+	case PM_DEVICE_ACTION_SUSPEND:
+		/* stop device clock */
+		err = clock_control_off(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE),
+								(clock_control_subsys_t)&dev_cfg->pclken);
+		if (err != 0) {
+			LOG_ERR("Could not disable QSPI clock");
+			return err;
+		}
+
+		/* Move pins to sleep state */
+		err = pinctrl_apply_state(dev_cfg->pcfg, PINCTRL_STATE_SLEEP);
+		if ((err < 0) && (err != -ENOENT)) {
+			/*
+			 * If returning -ENOENT, no pins where defined for sleep mode :
+			 * Do not output on console (might sleep already) when going to sleep,
+			 * "(LP)UART pinctrl sleep state not available"
+			 * and don't block PM suspend.
+			 * Else return the error.
+			 */
+			return err;
+		}
+		break;
+	default:
+		return -ENOTSUP;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_PM_DEVICE */
 
 #define DMA_CHANNEL_CONFIG(node, dir)					\
 		DT_DMAS_CELL_BY_NAME(node, dir, channel_config)
@@ -1419,7 +1507,10 @@ static struct flash_stm32_qspi_data flash_stm32_qspi_dev_data = {
 	QSPI_DMA_CHANNEL(STM32_QSPI_NODE, tx_rx)
 };
 
-DEVICE_DT_INST_DEFINE(0, &flash_stm32_qspi_init, NULL,
+PM_DEVICE_DT_INST_DEFINE(0, flash_stm32_qspi_pm_action);
+
+DEVICE_DT_INST_DEFINE(0, &flash_stm32_qspi_init,
+			  PM_DEVICE_DT_INST_GET(0),
 		      &flash_stm32_qspi_dev_data, &flash_stm32_qspi_cfg,
 		      POST_KERNEL, CONFIG_FLASH_INIT_PRIORITY,
 		      &flash_stm32_qspi_driver_api);
